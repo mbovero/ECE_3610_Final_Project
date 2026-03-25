@@ -91,6 +91,9 @@ while (toc < 20) % ADJUST ME if you want to have longer/shorter trials
     % Map IMU rotation to motor speed
     nb.setMotor(1, meanx*25);
 
+    fprintf("acc_x mean: %d\n", meanx);
+
+
     % x_abs = abs(meanx);
     % mtr_speed = round(((x_abs - x_min)/(x_max - x_min))*(mtr_max - mtr_min) + mtr_min);
     % 

@@ -2,7 +2,7 @@ clc
 clear all
 
 % Create an instance of the nanobot class
-nb = nanobot('COM3', 115200, 'serial');
+nb = nanobot('COM9', 115200, 'serial');
 
 %%
 % LIVE PLOT
@@ -94,9 +94,9 @@ fprintf('mean x: %.2f, mean y: %.2f, mean z: %.2f\n', meanx, meany, meanz);
 %Negative numbers cause the motor to spin in the opposite direction.
 %A +/-100% duty cycle can be a bit aggressive on the motor and will drain 
 %your battery quickly.
-nb.setMotor(2,25) % (motor number, duty cycle)
-pause(1)
-nb.setMotor(2,0)
+nb.setMotor(1,14) % (motor number, duty cycle)
+pause(3)
+nb.setMotor(1,0)
 
 %%
 % ENCODER READ
