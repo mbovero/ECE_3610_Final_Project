@@ -47,7 +47,82 @@ nb.setMotor(2, m1Duty);
 nb.setMotor(1, 0);
 nb.setMotor(2, 0);
 
-%% Line Following
+%% Put the sensor array over a white background and find the expected min
+% reflectance array values.
+
+% Initialize the reflectance array.
+nb.initReflectance();
+
+%Average a few values 
+avgVals = zeros(10, 6);
+for i = 1:10
+    read = nb.reflectanceRead();
+    avgVals(i, 1) = read.one;
+    avgVals(i, 2) = read.two;
+    avgVals(i, 3) = read.three;
+    avgVals(i, 4) = read.four;
+    avgVals(i, 5) = read.five;
+    avgVals(i, 6) = read.six;
+end
+minVals = [mean(avgVals(:,1)), mean(avgVals(:,2)), mean(avgVals(:,3)), ...
+    mean(avgVals(:,4)), mean(avgVals(:,5)), mean(avgVals(:,6))];
+
+fprintf(['Min Reflectance - one: %.2f, two: %.2f, three: %.2f four:' ...
+    '%.2f five: %.2f six: %.2f\n'], ...
+    minVals(1), minVals(2), minVals(3), minVals(4), minVals(5), minVals(6));
+minReflectance = [85.2,79.2,70.3,61.2,68,87.8]; % Set me to min reflectance 
+                                             % values for each sensor for
+                                             % future reference
+%% MAX REFLECTANCE VALUE CALIBRATION (all sensors over black tape)
+% Put the sensor array over a black background and find the expected max
+% reflectance array values.
+
+% Initialize the reflectance array.
+nb.initReflectance();
+
+%Average a few values
+avgVals = zeros(10, 6);
+for i = 1:10
+    read = nb.reflectanceRead();
+    avgVals(i, 1) = read.one;
+    avgVals(i, 2) = read.two;
+    avgVals(i, 3) = read.three;
+    avgVals(i, 4) = read.four;
+    avgVals(i, 5) = read.five;
+    avgVals(i, 6) = read.six;
+end
+maxVals = [mean(avgVals(:,1)), mean(avgVals(:,2)), mean(avgVals(:,3)), ...
+    mean(avgVals(:,4)), mean(avgVals(:,5)), mean(avgVals(:,6))];
+fprintf(['Max Reflectance - one: %.2f, two: %.2f, three: %.2f '...
+    'four: %.2f five: %.2f six: %.2f\n'], ...
+    maxVals(1), maxVals(2), maxVals(3), maxVals(4), maxVals(5), maxVals(6));
+maxReflectance = [727.6,527.4,390.6,357,420.7,646.9]; % Set me to max reflectance 
+                                             % values for each sensor for
+                                             % future reference
+
+%% 5.  LINE FOLLOWING PID LOOP
+% Though PID tuning can be tedious and frustrating at times, the payoff is
+% often worth it! A well-tuned PID system can be surprisingly robust.
+% Good luck, and don't hesitate to ask for help if you're stuck.
+
+% 1st Note:  In the last lab, you used a PID controller to control the  
+% motor speed (using information from the motor encoder).  In this lab, you 
+% will be using a PID controller to help the robot follow the line (using 
+% information from the IR sensing array).  As a result, you will not be 
+% able to just copy and paste your exact PID code from the last lab to 
+% this lab. 
+
+% 2nd Note: Make sure you only use the values produced by the reflectance 
+% array when the red LEDs on the underside of the reflectance array are on!
+% When your battery is getting low, the red LEDs on the underside of the 
+% reflectance array will turn off, and the numbers you get from the 
+% reflectance array will no longer be reliable. If you suspect that your 
+% battery is dead, grab an instructor's attention and they will swap your 
+% battery for a fully charged one.
+
+% Depending on the wiring, if you used a negative sign for any of the motor
+% duty cycles in section 3 above, make sure to implement those here as well.
+
 % First initialize the reflectance array.
 nb.initReflectance();
 
@@ -56,19 +131,16 @@ vals = nb.reflectanceRead();
 
 % Set the motor offset factor (use the value you found earlier)
 mOffScale = 1.1;
-w
+
 % TUNING:
 % Start very small. (Using reflectance values, the calculated error can  
 % range from zero to several thousand! Think about what coefficient you 
 % want multiplying by values that could get up to a thousand or so.)
-kp = 1.5;
-ki = 0;
-kd = 0.00;
+kp = 1;
+ki = 0.1;
+kd = 0.125;
 
 % Basic initialization
-maxVals = [846.9,740.7,549.8,432.8,416.8,454.6]; % Set me to max reflectance 
-minVals = [74.2,51.2,38.4,26.7,26.7,38.4]; % Set me to min reflectance 
-
 vals = 0;
 prevError = 0;
 prevTime = 0;
@@ -78,24 +150,22 @@ derivative = 0;
 % Determine a threshold to detect when white is detected 
 % (choose a value that will be used as a threshold by all sensors to know 
 % if the robot has lost the line)
-whiteThresh = 300; % Max value detected for all white
+whiteThresh = 250; % Max value detected for all white
 
 % The base duty cycle "speed" you wish to travel down the line 
 % (recommended value is 9)
-motorBaseSpeed = 10;
+motorBaseSpeed = 9;
 
 tic % start time
-
-fprintf("initialized\n")
 
 % Use a higher duty cycle for a very brief moment to overcome the gearbox 
 % force of static friction 
 % (recommendation: 10, with mOffScale if needed)
-nb.setMotor(1, 12*mOffScale);
-nb.setMotor(2, 12);
+nb.setMotor(1, mOffScale*11);
+nb.setMotor(2, 11);
 pause(0.03);
 
-while (toc < 5)  % Adjust me if you want to stop your line following 
+while (toc < 25)  % Adjust me if you want to stop your line following 
                  % earlier or let it run longer.
 
     % TIME STEP
@@ -120,14 +190,23 @@ while (toc < 5)  % Adjust me if you want to stop your line following
             calibratedVals(i) = 0;
         end
         if vals(i) > maxVals(i) 
-            calibratedVals(i) = maxVals(i);
+            calibratedVals(i) = 1;
         end
     end
 
+    fprintf(['Max Reflectance - one: %.2f, two: %.2f, three: %.2f '...
+    'four: %.2f five: %.2f six: %.2f\n'], ...
+    calibratedVals(1), calibratedVals(2), calibratedVals(3), calibratedVals(4), calibratedVals(5), calibratedVals(6));
+
     % Calculate the three errors to be used in the PID control 
     
-    error = 0.5*calibratedVals(1) + 1*calibratedVals(2) + 1*calibratedVals(3) - ...
-            1*calibratedVals(4) - 1*calibratedVals(5) - 0.5*calibratedVals(6); % Designing this error term can sometimes be just as 
+    extScalar = 6;
+    midScalar = 1.8;
+    innScalar = 1;
+
+    error = extScalar*calibratedVals(1) + midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
+            innScalar*(1-calibratedVals(4)) - midScalar*calibratedVals(5) - extScalar*calibratedVals(6);
+                 % Designing this error term can sometimes be just as 
                  % important as the tuning of the feedback loop (how you  
                  % set the PID controller output). In the last lab, this  
                  % error was a simple difference between two values (RPM  
@@ -136,21 +215,25 @@ while (toc < 5)  % Adjust me if you want to stop your line following
                  % to Look back at how you calculated the error in the
                  % Sensors 5 lab. Don't forget here to use the calibrated 
                  % values to calculate the error.  
-    fprintf("three: " + 1*calibratedVals(3) + "\n");
-    fprintf("four: " + calibratedVals(4) + "\n");
-    
-    EScaler = 0.0075;
-    error = EScaler * error;
+    % Clamp error
+    if (error < -5)
+        error = -5;
+    elseif (error > 5)
+        error = 5;
+    end
 
-    fprintf("Error:" + error + "\n");
+
+    fprintf('Error: %.3f \n', error);
+     
     integral = integral + error*dt;
 
-    derivative = (prevError - error) / dt;
+    derivative = (error - prevError) / dt;
 
     % Create your PID controller output here using the previously defined 
     % gain values and the three errors computed above. 
     control = kp * error + ki * integral + kd * derivative;
-    fprintf("Control: " + control + "\n");
+    fprintf('ctrl: %.3f \n', control);
+
 
     % STATE CHECKING 
     if (vals(1) < whiteThresh && ...
@@ -159,8 +242,6 @@ while (toc < 5)  % Adjust me if you want to stop your line following
             vals(4) < whiteThresh && ...
             vals(5) < whiteThresh && ...
             vals(6) < whiteThresh)
-        
-        fprintf("LOST LINE")
 
         % ALL SENSORS READ WHITE (lost tracking):
         nb.setMotor(1, 0); % stop the motors
@@ -168,7 +249,6 @@ while (toc < 5)  % Adjust me if you want to stop your line following
         break; % exit the while loop
 
     else
-        fprintf("LINE DETECTED\n")
 
         % LINE DETECTED:
         % We want to travel at a fixed speed down the line and the control 
@@ -180,12 +260,27 @@ while (toc < 5)  % Adjust me if you want to stop your line following
 
         nb.setMotor(1, m1Duty);
         nb.setMotor(2, m2Duty);
-        fprintf("m1Duty: " + m1Duty + "\n")
-        fprintf("m2Duty: " + m2Duty + "\n")
     end
 
     prevError = error;
 end
+nb.setMotor(1, 0);
+nb.setMotor(2, 0);
+%% 
+control = 1;
+m1Duty = mOffScale * (motorBaseSpeed + control);
+m2Duty = -(motorBaseSpeed - control);
+
+tic
+
+while (toc < 3)
+    nb.setMotor(1, m1Duty);
+    nb.setMotor(2, m2Duty);
+end
+
+nb.setMotor(1, 0);
+nb.setMotor(2, 0);
+%% STOP
 nb.setMotor(1, 0);
 nb.setMotor(2, 0);
 
