@@ -156,6 +156,9 @@ whiteThresh = 250; % Max value detected for all white
 % (recommended value is 9)
 motorBaseSpeed = 9;
 
+turn180Speed = 11; % ---new line ---
+turn180Time = 1.0; % ---new line ---
+
 tic % start time
 
 % Use a higher duty cycle for a very brief moment to overcome the gearbox 
@@ -197,6 +200,14 @@ while (toc < 25)  % Adjust me if you want to stop your line following
     fprintf(['Max Reflectance - one: %.2f, two: %.2f, three: %.2f '...
     'four: %.2f five: %.2f six: %.2f\n'], ...
     calibratedVals(1), calibratedVals(2), calibratedVals(3), calibratedVals(4), calibratedVals(5), calibratedVals(6));
+
+    if all(calibratedVals >= .95) % ---new line ---
+        performTurn180(nb, turn180Speed, turn180Time); % ---new line ---
+        prevError = 0; % ---new line ---
+        integral = 0; % ---new line ---
+        prevTime = toc; % ---new line ---
+        continue; % ---new line ---
+    end % ---new line ---
 
     % Calculate the three errors to be used in the PID control 
     
@@ -292,3 +303,14 @@ clc
 delete(nb);
 clear('nb');
 clear all
+
+function performTurn180(nb, turnSpeed, turnTime) % ---new line ---
+    tic % ---new line ---
+    while toc < turnTime % ---new line ---
+        % nb.setMotor(1, mOffScale * turnSpeed); % ---new line ---
+        nb.setMotor(2, turnSpeed); % ---new line ---
+    end % ---new line ---
+    nb.setMotor(1, 0); % ---new line ---
+    nb.setMotor(2, 0); % ---new line ---
+    pause(0.05); % ---new line ---
+end % ---new line ---
