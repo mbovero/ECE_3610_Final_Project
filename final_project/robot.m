@@ -40,13 +40,6 @@ end
 % Turn off the motors
 nb.setMotor(1, 0);
 nb.setMotor(2, 0);
-%% 
-nb.setMotor(2, m1Duty);
-%% 
-% Turn off the motors
-nb.setMotor(1, 0);
-nb.setMotor(2, 0);
-
 %% Put the sensor array over a white background and find the expected min
 % reflectance array values.
 
@@ -136,9 +129,9 @@ mOffScale = 1.1;
 % Start very small. (Using reflectance values, the calculated error can  
 % range from zero to several thousand! Think about what coefficient you 
 % want multiplying by values that could get up to a thousand or so.)
-kp = 1;
-ki = 0.1;
-kd = 0.125;
+kp = 0.7;
+ki = 0.3;
+kd = 0.13;
 
 % Basic initialization
 vals = 0;
@@ -146,6 +139,7 @@ prevError = 0;
 prevTime = 0;
 integral = 0;
 derivative = 0;
+checkpoints = 0;
 
 % Determine a threshold to detect when white is detected 
 % (choose a value that will be used as a threshold by all sensors to know 
@@ -156,8 +150,8 @@ whiteThresh = 250; % Max value detected for all white
 % (recommended value is 9)
 motorBaseSpeed = 9;
 
-turn180Speed = 11; % ---new line ---
-turn180Time = 1.0; % ---new line ---
+turn180Speed = 11; 
+turn180Time = 1.2; 
 
 tic % start time
 
@@ -168,7 +162,7 @@ nb.setMotor(1, mOffScale*11);
 nb.setMotor(2, 11);
 pause(0.03);
 
-while (toc < 25)  % Adjust me if you want to stop your line following 
+while (toc < 30)  % Adjust me if you want to stop your line following 
                  % earlier or let it run longer.
 
     % TIME STEP
@@ -201,22 +195,15 @@ while (toc < 25)  % Adjust me if you want to stop your line following
     'four: %.2f five: %.2f six: %.2f\n'], ...
     calibratedVals(1), calibratedVals(2), calibratedVals(3), calibratedVals(4), calibratedVals(5), calibratedVals(6));
 
-    if all(calibratedVals >= .95) % ---new line ---
-        performTurn180(nb, turn180Speed, turn180Time); % ---new line ---
-        prevError = 0; % ---new line ---
-        integral = 0; % ---new line ---
-        prevTime = toc; % ---new line ---
-        continue; % ---new line ---
-    end % ---new line ---
-
     % Calculate the three errors to be used in the PID control 
     
     extScalar = 6;
-    midScalar = 1.8;
+    midScalar = 2;
     innScalar = 1;
+    rightWeight = 1.35;
 
-    error = extScalar*calibratedVals(1) + midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
-            innScalar*(1-calibratedVals(4)) - midScalar*calibratedVals(5) - extScalar*calibratedVals(6);
+    error = 3*extScalar*calibratedVals(1) + 1.3*midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
+            rightWeight*innScalar*(1-calibratedVals(4)) - rightWeight*midScalar*calibratedVals(5) - 2*rightWeight*extScalar*calibratedVals(6);
                  % Designing this error term can sometimes be just as 
                  % important as the tuning of the feedback loop (how you  
                  % set the PID controller output). In the last lab, this  
@@ -233,9 +220,28 @@ while (toc < 25)  % Adjust me if you want to stop your line following
         error = 5;
     end
 
-
     fprintf('Error: %.3f \n', error);
      
+
+
+
+    if all(calibratedVals >= .8) % ---new line ---
+        if (~checkpoints)
+            performTurn180(nb, turn180Speed, turn180Time, mOffScale); % ---new line ---
+            prevError = 0; % ---new line ---
+            error = 0;
+            integral = 0; % ---new line ---
+            derivative = 0;
+        else
+            nb.setMotor(1, 0); 
+            nb.setMotor(2, 0);
+            break;
+        end
+        checkpoints = checkpoints + 1;
+        continue; % ---new line ---
+    end % ---new line ---
+
+
     integral = integral + error*dt;
 
     derivative = (error - prevError) / dt;
@@ -278,22 +284,10 @@ end
 nb.setMotor(1, 0);
 nb.setMotor(2, 0);
 %% 
-control = 1;
-m1Duty = mOffScale * (motorBaseSpeed + control);
-m2Duty = -(motorBaseSpeed - control);
-
-tic
-
-while (toc < 3)
-    nb.setMotor(1, m1Duty);
-    nb.setMotor(2, m2Duty);
-end
-
-nb.setMotor(1, 0);
-nb.setMotor(2, 0);
+performTurn180(nb, 10, 1.35, 1.1);
 %% STOP
-nb.setMotor(1, 0);
-nb.setMotor(2, 0);
+nb.setMotor(1, 0); % Right motor
+nb.setMotor(2, 0); % Left motor
 
 %% 5. DISCONNECT
 %  Clears the workspace and command window, then
@@ -304,13 +298,21 @@ delete(nb);
 clear('nb');
 clear all
 
-function performTurn180(nb, turnSpeed, turnTime) % ---new line ---
-    tic % ---new line ---
-    while toc < turnTime % ---new line ---
-        % nb.setMotor(1, mOffScale * turnSpeed); % ---new line ---
-        nb.setMotor(2, turnSpeed); % ---new line ---
-    end % ---new line ---
-    nb.setMotor(1, 0); % ---new line ---
-    nb.setMotor(2, 0); % ---new line ---
-    pause(0.05); % ---new line ---
-end % ---new line ---
+%%
+function performTurn180(nb, turnSpeed, turnTime, mOffScale) 
+    fprintf('TURNING');
+    tic
+    while(toc < 0.5)
+        nb.setMotor(1, 0); 
+        nb.setMotor(2, 0); 
+    end
+
+    tic 
+    while toc < turnTime 
+        nb.setMotor(1, (mOffScale * turnSpeed)); 
+        nb.setMotor(2, turnSpeed); 
+    end 
+    nb.setMotor(1, 0); 
+    nb.setMotor(2, 0); 
+    pause(0.05); 
+end 
