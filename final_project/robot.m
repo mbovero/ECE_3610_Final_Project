@@ -130,8 +130,8 @@ mOffScale = 1.1;
 % range from zero to several thousand! Think about what coefficient you 
 % want multiplying by values that could get up to a thousand or so.)
 kp = 0.9;
-ki = 0.3;
-kd = 0.13;
+ki = 0.1;
+kd = 0.15;
 
 % Basic initialization
 vals = 0;
@@ -197,13 +197,13 @@ while (toc < 30)  % Adjust me if you want to stop your line following
 
     % Calculate the three errors to be used in the PID control 
     
-    extScalar = 6;
-    midScalar = 2;
+    extScalar = 10;
+    midScalar = 4;
     innScalar = 2;
     rightWeight = 1.35;
 
-    error = 3*extScalar*calibratedVals(1) + 1.3*midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
-            rightWeight*innScalar*(1-calibratedVals(4)) - rightWeight*midScalar*calibratedVals(5) - 2*rightWeight*extScalar*calibratedVals(6);
+    error = 6*extScalar*calibratedVals(1) + 1.3*midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
+            rightWeight*innScalar*(1-calibratedVals(4)) - rightWeight*midScalar*calibratedVals(5) - 3*rightWeight*extScalar*calibratedVals(6);
                  % Designing this error term can sometimes be just as 
                  % important as the tuning of the feedback loop (how you  
                  % set the PID controller output). In the last lab, this  
@@ -213,11 +213,13 @@ while (toc < 30)  % Adjust me if you want to stop your line following
                  % to Look back at how you calculated the error in the
                  % Sensors 5 lab. Don't forget here to use the calibrated 
                  % values to calculate the error.  
+    
     % Clamp error
-    if (error < -5)
-        error = -5;
-    elseif (error > 5)
-        error = 5;
+    maxError = 6;
+    if (error < -maxError)
+        error = -maxError;
+    elseif (error > maxError)
+        error = maxError;
     end
 
     fprintf('Error: %.3f \n', error);
