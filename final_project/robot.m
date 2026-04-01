@@ -129,7 +129,7 @@ mOffScale = 1.1;
 % Start very small. (Using reflectance values, the calculated error can  
 % range from zero to several thousand! Think about what coefficient you 
 % want multiplying by values that could get up to a thousand or so.)
-kp = 0.7;
+kp = 0.9;
 ki = 0.3;
 kd = 0.13;
 
@@ -199,7 +199,7 @@ while (toc < 30)  % Adjust me if you want to stop your line following
     
     extScalar = 6;
     midScalar = 2;
-    innScalar = 1;
+    innScalar = 2;
     rightWeight = 1.35;
 
     error = 3*extScalar*calibratedVals(1) + 1.3*midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
