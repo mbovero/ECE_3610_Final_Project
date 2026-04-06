@@ -148,9 +148,9 @@ whiteThresh = 250; % Max value detected for all white
 
 % The base duty cycle "speed" you wish to travel down the line 
 % (recommended value is 9)
-motorBaseSpeed = 9;
+motorBaseSpeed = 10;
 
-turn180Speed = 11; 
+turn180Speed = 9; 
 turn180Time = 1.2; 
 
 tic % start time
@@ -224,15 +224,12 @@ while (toc < 30)  % Adjust me if you want to stop your line following
 
     fprintf('Error: %.3f \n', error);
      
-
-
-
-    if all(calibratedVals >= .8) % ---new line ---
+    if all(calibratedVals >= .8)
         if (~checkpoints)
-            performTurn180(nb, turn180Speed, turn180Time, mOffScale); % ---new line ---
-            prevError = 0; % ---new line ---
+            performTurn180(nb, turn180Speed, turn180Time, mOffScale, minVals, maxVals);
+            prevError = 0;
             error = 0;
-            integral = 0; % ---new line ---
+            integral = 0;
             derivative = 0;
         else
             nb.setMotor(1, 0); 
@@ -240,9 +237,8 @@ while (toc < 30)  % Adjust me if you want to stop your line following
             break;
         end
         checkpoints = checkpoints + 1;
-        continue; % ---new line ---
-    end % ---new line ---
-
+        continue;
+    end
 
     integral = integral + error*dt;
 
@@ -252,7 +248,6 @@ while (toc < 30)  % Adjust me if you want to stop your line following
     % gain values and the three errors computed above. 
     control = kp * error + ki * integral + kd * derivative;
     fprintf('ctrl: %.3f \n', control);
-
 
     % STATE CHECKING 
     if (vals(1) < whiteThresh && ...
@@ -274,8 +269,8 @@ while (toc < 30)  % Adjust me if you want to stop your line following
         % should make minor adjustments that allow the robot to stay 
         % centered on the line as it moves. These should be equations and
         % not just numbers:
-        m1Duty = mOffScale * (motorBaseSpeed + control);
-        m2Duty = -(motorBaseSpeed - control);
+        m1Duty = mOffScale * max(0, motorBaseSpeed + min(control,0));
+        m2Duty = -max(0, motorBaseSpeed - max(control,0));
 
         nb.setMotor(1, m1Duty);
         nb.setMotor(2, m2Duty);
@@ -286,7 +281,7 @@ end
 nb.setMotor(1, 0);
 nb.setMotor(2, 0);
 %% 
-performTurn180(nb, 10, 1.35, 1.1);
+performTurn180(nb, 10, 1.35, 1.1, minVals, maxVals);
 %% STOP
 nb.setMotor(1, 0); % Right motor
 nb.setMotor(2, 0); % Left motor
@@ -301,20 +296,41 @@ clear('nb');
 clear all
 
 %%
-function performTurn180(nb, turnSpeed, turnTime, mOffScale) 
+function performTurn180(nb, turnSpeed, turnTime, mOffScale, minVals, maxVals) 
     fprintf('TURNING');
-    tic
-    while(toc < 0.5)
-        nb.setMotor(1, 0); 
-        nb.setMotor(2, 0); 
-    end
 
-    tic 
-    while toc < turnTime 
+    % Briefly ignore sensor feedback at the start of the turn
+    tic
+    while(toc < 0.7)
         nb.setMotor(1, (mOffScale * turnSpeed)); 
         nb.setMotor(2, turnSpeed); 
-    end 
+    end
+
+    % Continue turning until the inner sensors find the black line again
+    while true
+        vals = nb.reflectanceRead();
+        vals = [vals.one, vals.two, vals.three, vals.four, vals.five, vals.six];
+
+        calibratedVals = zeros(1,6);
+        for i = 1:6
+            calibratedVals(i) = (vals(i) - minVals(i))/(maxVals(i) - minVals(i));
+            if vals(i) < minVals(i)
+                calibratedVals(i) = 0;
+            end
+            if vals(i) > maxVals(i)
+                calibratedVals(i) = 1;
+            end
+        end
+
+        nb.setMotor(1, (mOffScale * turnSpeed)); 
+        nb.setMotor(2, turnSpeed); 
+
+        if calibratedVals(3) >= 0.3 || calibratedVals(4) >= 0.3
+            break;
+        end
+    end
+
     nb.setMotor(1, 0); 
     nb.setMotor(2, 0); 
     pause(0.05); 
-end 
+end
