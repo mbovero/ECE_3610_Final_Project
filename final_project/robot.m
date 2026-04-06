@@ -7,7 +7,6 @@
 % Description 
 %%%%%%%%%%%%%%
 
-
 %% 1. CONNECT TO THE NANOBOT
 clc
 clear all
@@ -19,20 +18,20 @@ nb = nanobot('COM12', 115200, 'serial');
 
 % ROBOT = 'R3'
 
-% Initialization
-mOffScale = 1.3;
-motorBaseSpeed = 11;
+
+
+%% Straight Line Test
+mOffScale = 1.11;
+motorBaseSpeed = 9;
 m1Duty = mOffScale * motorBaseSpeed; % Right motor
 m2Duty = motorBaseSpeed;
-%% Straight Line Test
 
 tic
 nb.setMotor(1, mOffScale * 10);
 nb.setMotor(2, 10);
 pause(0.03);
 
-while (toc < 3) % adjust the time to test if robot goes in straight line
-                % (shorter time saves battery; longer tests longer path)
+while (toc < 3)
     nb.setMotor(1, m1Duty);
     nb.setMotor(2, -m2Duty);
 end
@@ -40,13 +39,14 @@ end
 % Turn off the motors
 nb.setMotor(1, 0);
 nb.setMotor(2, 0);
+
 %% Put the sensor array over a white background and find the expected min
 % reflectance array values.
 
 % Initialize the reflectance array.
 nb.initReflectance();
 
-%Average a few values 
+% Average a few values 
 avgVals = zeros(10, 6);
 for i = 1:10
     read = nb.reflectanceRead();
@@ -63,9 +63,7 @@ minVals = [mean(avgVals(:,1)), mean(avgVals(:,2)), mean(avgVals(:,3)), ...
 fprintf(['Min Reflectance - one: %.2f, two: %.2f, three: %.2f four:' ...
     '%.2f five: %.2f six: %.2f\n'], ...
     minVals(1), minVals(2), minVals(3), minVals(4), minVals(5), minVals(6));
-minReflectance = [85.2,79.2,70.3,61.2,68,87.8]; % Set me to min reflectance 
-                                             % values for each sensor for
-                                             % future reference
+
 %% MAX REFLECTANCE VALUE CALIBRATION (all sensors over black tape)
 % Put the sensor array over a black background and find the expected max
 % reflectance array values.
@@ -73,7 +71,7 @@ minReflectance = [85.2,79.2,70.3,61.2,68,87.8]; % Set me to min reflectance
 % Initialize the reflectance array.
 nb.initReflectance();
 
-%Average a few values
+% Average a few values
 avgVals = zeros(10, 6);
 for i = 1:10
     read = nb.reflectanceRead();
@@ -89,213 +87,175 @@ maxVals = [mean(avgVals(:,1)), mean(avgVals(:,2)), mean(avgVals(:,3)), ...
 fprintf(['Max Reflectance - one: %.2f, two: %.2f, three: %.2f '...
     'four: %.2f five: %.2f six: %.2f\n'], ...
     maxVals(1), maxVals(2), maxVals(3), maxVals(4), maxVals(5), maxVals(6));
-maxReflectance = [727.6,527.4,390.6,357,420.7,646.9]; % Set me to max reflectance 
-                                             % values for each sensor for
-                                             % future reference
 
-%% 5.  LINE FOLLOWING PID LOOP
-% Though PID tuning can be tedious and frustrating at times, the payoff is
-% often worth it! A well-tuned PID system can be surprisingly robust.
-% Good luck, and don't hesitate to ask for help if you're stuck.
+%% MAIN BEHAVIOR ------------------------------------------------------------
+% Initialization
+minVals = [93.8,84.2,74.0,71.6,83.00,108.4]; % Set me to min reflectance 
+maxVals = [556.1,476.7,748.9,668.9,273.8,318.1]; % Set me to max reflectance 
 
-% 1st Note:  In the last lab, you used a PID controller to control the  
-% motor speed (using information from the motor encoder).  In this lab, you 
-% will be using a PID controller to help the robot follow the line (using 
-% information from the IR sensing array).  As a result, you will not be 
-% able to just copy and paste your exact PID code from the last lab to 
-% this lab. 
 
-% 2nd Note: Make sure you only use the values produced by the reflectance 
-% array when the red LEDs on the underside of the reflectance array are on!
-% When your battery is getting low, the red LEDs on the underside of the 
-% reflectance array will turn off, and the numbers you get from the 
-% reflectance array will no longer be reliable. If you suspect that your 
-% battery is dead, grab an instructor's attention and they will swap your 
-% battery for a fully charged one.
+mOffScale = 1.11;
+motorBaseSpeed = 9;
+m1Duty = mOffScale * motorBaseSpeed; % Right motor
+m2Duty = motorBaseSpeed;
 
-% Depending on the wiring, if you used a negative sign for any of the motor
-% duty cycles in section 3 above, make sure to implement those here as well.
+% MODE TOGGLE
+mode = 'wall';   % 'line' or 'wall'
+if strcmp(mode, 'wall')
+    performWallFollow(nb, mOffScale, minVals, maxVals);
+else
 
-% First initialize the reflectance array.
-nb.initReflectance();
+    %% 5. LINE FOLLOWING PID LOOP
 
-% Get an initial reading
-vals = nb.reflectanceRead();
+    % First initialize the reflectance array.
+    nb.initReflectance();
 
-% Set the motor offset factor (use the value you found earlier)
-mOffScale = 1.1;
-
-% TUNING:
-% Start very small. (Using reflectance values, the calculated error can  
-% range from zero to several thousand! Think about what coefficient you 
-% want multiplying by values that could get up to a thousand or so.)
-kp = 0.9;
-ki = 0.1;
-kd = 0.15;
-
-% Basic initialization
-vals = 0;
-prevError = 0;
-prevTime = 0;
-integral = 0;
-derivative = 0;
-checkpoints = 0;
-
-% Determine a threshold to detect when white is detected 
-% (choose a value that will be used as a threshold by all sensors to know 
-% if the robot has lost the line)
-whiteThresh = 250; % Max value detected for all white
-
-% The base duty cycle "speed" you wish to travel down the line 
-% (recommended value is 9)
-motorBaseSpeed = 10;
-
-turn180Speed = 9; 
-turn180Time = 1.2; 
-
-tic % start time
-
-% Use a higher duty cycle for a very brief moment to overcome the gearbox 
-% force of static friction 
-% (recommendation: 10, with mOffScale if needed)
-nb.setMotor(1, mOffScale*11);
-nb.setMotor(2, 11);
-pause(0.03);
-
-while (toc < 30)  % Adjust me if you want to stop your line following 
-                 % earlier or let it run longer.
-
-    % TIME STEP
-    dt = toc - prevTime; % find the amount of time that has elapsed
-
-    prevTime = toc; % set the current time to the previous time in the 
-                    % next time step
-
-    % take a reading                
+    % Get an initial reading
     vals = nb.reflectanceRead();
 
-    % change from a struct to a list for convenience
-    vals = [vals.one, vals.two, vals.three, vals.four, vals.five, vals.six];
-    
-    % Calibrate sensor readings
-    calibratedVals = zeros(1,6); % initialize to zero
-    for i = 1:6
-        calibratedVals(i) = (vals(i) - minVals(i))/(maxVals(i) - minVals(i));
-        % overwrite the calculated calibrated values if get a reading below 
-        % or above our set minVals (white) or maxVals (black), respectively
-        if vals(i) < minVals(i) 
-            calibratedVals(i) = 0;
+    % Set the motor offset factor (use the value you found earlier)
+    mOffScale = 1.1;
+
+    % TUNING:
+    kp = 0.9;
+    ki = 0.1;
+    kd = 0.15;
+
+    % Basic initialization
+    vals = 0;
+    prevError = 0;
+    prevTime = 0;
+    integral = 0;
+    derivative = 0;
+    checkpoints = 0;
+
+    % Determine a threshold to detect when white is detected
+    whiteThresh = 250;
+
+    % The base duty cycle "speed" you wish to travel down the line
+    motorBaseSpeed = 10;
+
+    turn180Speed = 9; 
+    turn180Time = 1.2; 
+
+    tic % start time
+
+    % Use a higher duty cycle briefly to overcome static friction
+    nb.setMotor(1, mOffScale*11);
+    nb.setMotor(2, 11);
+    pause(0.03);
+
+    while (toc < 30)
+
+        % TIME STEP
+        dt = toc - prevTime;
+        prevTime = toc;
+
+        % Take a reading
+        vals = nb.reflectanceRead();
+
+        % Change from a struct to a list for convenience
+        vals = [vals.one, vals.two, vals.three, vals.four, vals.five, vals.six];
+        
+        % Calibrate sensor readings
+        calibratedVals = zeros(1,6);
+        for i = 1:6
+            calibratedVals(i) = (vals(i) - minVals(i))/(maxVals(i) - minVals(i));
+            if vals(i) < minVals(i) 
+                calibratedVals(i) = 0;
+            end
+            if vals(i) > maxVals(i) 
+                calibratedVals(i) = 1;
+            end
         end
-        if vals(i) > maxVals(i) 
-            calibratedVals(i) = 1;
+
+        fprintf(['Max Reflectance - one: %.2f, two: %.2f, three: %.2f '...
+        'four: %.2f five: %.2f six: %.2f\n'], ...
+        calibratedVals(1), calibratedVals(2), calibratedVals(3), calibratedVals(4), calibratedVals(5), calibratedVals(6));
+
+        % Calculate the error
+        extScalar = 10;
+        midScalar = 4;
+        innScalar = 2;
+        rightWeight = 1.35;
+
+        error = 6*extScalar*calibratedVals(1) + 1.3*midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
+                rightWeight*innScalar*(1-calibratedVals(4)) - rightWeight*midScalar*calibratedVals(5) - 3*rightWeight*extScalar*calibratedVals(6);
+
+        % Clamp error
+        maxError = 6;
+        if (error < -maxError)
+            error = -maxError;
+        elseif (error > maxError)
+            error = maxError;
         end
-    end
 
-    fprintf(['Max Reflectance - one: %.2f, two: %.2f, three: %.2f '...
-    'four: %.2f five: %.2f six: %.2f\n'], ...
-    calibratedVals(1), calibratedVals(2), calibratedVals(3), calibratedVals(4), calibratedVals(5), calibratedVals(6));
+        fprintf('Error: %.3f \n', error);
+         
+        if all(calibratedVals >= .8)
+            if (~checkpoints)
+                performTurn180(nb, turn180Speed, turn180Time, mOffScale, minVals, maxVals);
+                prevError = 0;
+                error = 0;
+                integral = 0;
+                derivative = 0;
+            else
+                nb.setMotor(1, 0); 
+                nb.setMotor(2, 0);
+                break;
+            end
+            checkpoints = checkpoints + 1;
+            continue;
+        end
 
-    % Calculate the three errors to be used in the PID control 
-    
-    extScalar = 10;
-    midScalar = 4;
-    innScalar = 2;
-    rightWeight = 1.35;
+        integral = integral + error*dt;
+        derivative = (error - prevError) / dt;
 
-    error = 6*extScalar*calibratedVals(1) + 1.3*midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
-            rightWeight*innScalar*(1-calibratedVals(4)) - rightWeight*midScalar*calibratedVals(5) - 3*rightWeight*extScalar*calibratedVals(6);
-                 % Designing this error term can sometimes be just as 
-                 % important as the tuning of the feedback loop (how you  
-                 % set the PID controller output). In the last lab, this  
-                 % error was a simple difference between two values (RPM  
-                 % and the target RPM). Here, you're working with 6 sensors  
-                 % that are located in different positions. You might want 
-                 % to Look back at how you calculated the error in the
-                 % Sensors 5 lab. Don't forget here to use the calibrated 
-                 % values to calculate the error.  
-    
-    % Clamp error
-    maxError = 6;
-    if (error < -maxError)
-        error = -maxError;
-    elseif (error > maxError)
-        error = maxError;
-    end
+        % PID output
+        control = kp * error + ki * integral + kd * derivative;
+        fprintf('ctrl: %.3f \n', control);
 
-    fprintf('Error: %.3f \n', error);
-     
-    if all(calibratedVals >= .8)
-        if (~checkpoints)
-            performTurn180(nb, turn180Speed, turn180Time, mOffScale, minVals, maxVals);
-            prevError = 0;
-            error = 0;
-            integral = 0;
-            derivative = 0;
-        else
-            nb.setMotor(1, 0); 
+        % STATE CHECKING 
+        if (vals(1) < whiteThresh && ...
+                vals(2) < whiteThresh && ...
+                vals(3) < whiteThresh && ...
+                vals(4) < whiteThresh && ...
+                vals(5) < whiteThresh && ...
+                vals(6) < whiteThresh)
+
+            % ALL SENSORS READ WHITE
+            nb.setMotor(1, 0);
             nb.setMotor(2, 0);
             break;
+
+        else
+
+            % LINE DETECTED
+            m1Duty = mOffScale * max(0, motorBaseSpeed + min(control,0));
+            m2Duty = -max(0, motorBaseSpeed - max(control,0));
+
+            nb.setMotor(1, m1Duty);
+            nb.setMotor(2, m2Duty);
         end
-        checkpoints = checkpoints + 1;
-        continue;
+
+        prevError = error;
     end
-
-    integral = integral + error*dt;
-
-    derivative = (error - prevError) / dt;
-
-    % Create your PID controller output here using the previously defined 
-    % gain values and the three errors computed above. 
-    control = kp * error + ki * integral + kd * derivative;
-    fprintf('ctrl: %.3f \n', control);
-
-    % STATE CHECKING 
-    if (vals(1) < whiteThresh && ...
-            vals(2) < whiteThresh && ...
-            vals(3) < whiteThresh && ...
-            vals(4) < whiteThresh && ...
-            vals(5) < whiteThresh && ...
-            vals(6) < whiteThresh)
-
-        % ALL SENSORS READ WHITE (lost tracking):
-        nb.setMotor(1, 0); % stop the motors
-        nb.setMotor(2, 0);
-        break; % exit the while loop
-
-    else
-
-        % LINE DETECTED:
-        % We want to travel at a fixed speed down the line and the control 
-        % should make minor adjustments that allow the robot to stay 
-        % centered on the line as it moves. These should be equations and
-        % not just numbers:
-        m1Duty = mOffScale * max(0, motorBaseSpeed + min(control,0));
-        m2Duty = -max(0, motorBaseSpeed - max(control,0));
-
-        nb.setMotor(1, m1Duty);
-        nb.setMotor(2, m2Duty);
-    end
-
-    prevError = error;
+    nb.setMotor(1, 0);
+    nb.setMotor(2, 0);
 end
+
+%% STOP
 nb.setMotor(1, 0);
 nb.setMotor(2, 0);
-%% 
-performTurn180(nb, 10, 1.35, 1.1, minVals, maxVals);
-%% STOP
-nb.setMotor(1, 0); % Right motor
-nb.setMotor(2, 0); % Left motor
 
 %% 5. DISCONNECT
-%  Clears the workspace and command window, then
-%  disconnects from the nanobot, freeing up the serial port.
-
 clc
 delete(nb);
 clear('nb');
 clear all
 
-%%
+%% FUNCTIONS
+
 function performTurn180(nb, turnSpeed, turnTime, mOffScale, minVals, maxVals) 
     fprintf('TURNING');
 
@@ -333,4 +293,257 @@ function performTurn180(nb, turnSpeed, turnTime, mOffScale, minVals, maxVals)
     nb.setMotor(1, 0); 
     nb.setMotor(2, 0); 
     pause(0.05); 
+end
+%% Print ultra sonic values
+% Initialize ultrasonic sensors using your required API/pins
+    nb.initUltrasonic1('D2','D3');   % front: trig D2, echo D3
+    nb.initUltrasonic2('D4','D5');   % side: trig D4, echo D5
+tic
+while(toc < 5)
+    fprintf('Front: %f3f \n', nb.ultrasonicRead1());
+    %fprintf('Side: %f3f \n', nb.ultrasonicRead2());
+end
+%% 
+function performWallFollow(nb, mOffScale, minVals, maxVals)
+    fprintf('Beginning wall following...\n');
+
+    % --- line-follow parameters
+    nb.initReflectance();
+
+    kp = 0.9;
+    ki = 0.1;
+    kd = 0.15;
+
+    prevError = 0;
+    prevTime = 0;
+    integral = 0;
+
+    motorBaseSpeed = 10;
+    whiteThresh = 250;
+
+    % --- wall-follow parameters
+    frontStopDist = 175;    % tune this
+    wallBaseSpeed = 8;
+    wallKp = 0.35;         % tune this
+    turnSpeed = 8;
+
+    % Initialize ultrasonic sensors using your required API/pins
+    nb.initUltrasonic1('D2','D3');   % front: trig D2, echo D3
+    nb.initUltrasonic2('D4','D5');   % side: trig D4, echo D5
+
+    %% Phase 1: follow line until all-black wall marker is reached
+    fprintf('Following line until marker...\n');
+
+    tic
+    while true
+        dt = toc - prevTime;
+        prevTime = toc;
+
+        vals = nb.reflectanceRead();
+        vals = [vals.one, vals.two, vals.three, vals.four, vals.five, vals.six];
+
+        calibratedVals = zeros(1,6);
+        for i = 1:6
+            calibratedVals(i) = (vals(i) - minVals(i))/(maxVals(i) - minVals(i));
+            if vals(i) < minVals(i)
+                calibratedVals(i) = 0;
+            end
+            if vals(i) > maxVals(i)
+                calibratedVals(i) = 1;
+            end
+        end
+
+        if all(calibratedVals >= 0.8)
+            nb.setMotor(1, 0);
+            nb.setMotor(2, 0);
+            pause(0.05);
+            break;
+        end
+
+        extScalar = 10;
+        midScalar = 4;
+        innScalar = 2;
+        rightWeight = 1.35;
+
+        error = 6*extScalar*calibratedVals(1) + 1.3*midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
+                rightWeight*innScalar*(1-calibratedVals(4)) - rightWeight*midScalar*calibratedVals(5) - 3*rightWeight*extScalar*calibratedVals(6);
+
+        maxError = 6;
+        if error < -maxError
+            error = -maxError;
+        elseif error > maxError
+            error = maxError;
+        end
+
+        integral = integral + error*dt;
+        derivative = (error - prevError) / dt;
+        control = kp * error + ki * integral + kd * derivative;
+
+        if (vals(1) < whiteThresh && vals(2) < whiteThresh && vals(3) < whiteThresh && ...
+            vals(4) < whiteThresh && vals(5) < whiteThresh && vals(6) < whiteThresh)
+
+            nb.setMotor(1, 0);
+            nb.setMotor(2, 0);
+            break;
+        else
+            m1Duty = mOffScale * max(0, motorBaseSpeed + min(control,0));
+            m2Duty = -max(0, motorBaseSpeed - max(control,0));
+
+            nb.setMotor(1, m1Duty);
+            nb.setMotor(2, m2Duty);
+        end
+
+        prevError = error;
+    end
+
+    %% Phase 2: advance toward wall using front ultrasonic
+    fprintf('Advancing to wall...\n');
+
+    while true
+        front = nb.ultrasonicRead1();
+
+        if front <= frontStopDist
+            nb.setMotor(1, 0);
+            nb.setMotor(2, 0);
+            pause(0.05);
+            break;
+        end
+
+        nb.setMotor(1, mOffScale * motorBaseSpeed);
+        nb.setMotor(2, -motorBaseSpeed);
+    end
+
+    % LINE FOLLOW UNTIL HITTING THE WALL!!
+    %% Phase 3: turn right ~90 degrees
+    fprintf('Turning right 90 degrees...\n');
+
+    tic
+    while toc < 0.55   % tune this
+        nb.setMotor(1, -mOffScale * turnSpeed);
+        nb.setMotor(2, -turnSpeed);
+    end
+    nb.setMotor(1, 0);
+    nb.setMotor(2, 0);
+    pause(0.05);
+
+    %% Phase 4: use side ultrasonic target distance
+    left = nb.ultrasonicRead2();
+    targetDist = left;
+
+    %% Phase 5: follow wall until black line is found again
+    while true
+        left = nb.ultrasonicRead2();
+        wallError = targetDist - left;
+        wallControl = wallKp * wallError;
+
+        % Only slow one side to turn
+        rightCmd = wallBaseSpeed;
+        leftCmd = wallBaseSpeed;
+
+        if wallControl > 0
+            % too close to wall -> turn away
+            rightCmd = max(0, wallBaseSpeed - wallControl);
+        else
+            % too far from wall -> turn toward
+            leftCmd = max(0, wallBaseSpeed + wallControl);
+        end
+
+        nb.setMotor(1, mOffScale * rightCmd);
+        nb.setMotor(2, -leftCmd);
+
+        vals = nb.reflectanceRead();
+        vals = [vals.one, vals.two, vals.three, vals.four, vals.five, vals.six];
+
+        calibratedVals = zeros(1,6);
+        for i = 1:6
+            calibratedVals(i) = (vals(i) - minVals(i))/(maxVals(i) - minVals(i));
+            if vals(i) < minVals(i)
+                calibratedVals(i) = 0;
+            end
+            if vals(i) > maxVals(i)
+                calibratedVals(i) = 1;
+            end
+        end
+
+        if all(calibratedVals >= 0.8)
+            nb.setMotor(1, 0);
+            nb.setMotor(2, 0);
+            pause(0.05);
+            break;
+        end
+    end
+
+    %% Phase 6: line follow back HOME
+    kp = 0.9;
+    ki = 0.1;
+    kd = 0.15;
+
+    prevError = 0;
+    prevTime = 0;
+    integral = 0;
+
+    tic
+    while true
+        dt = toc - prevTime;
+        prevTime = toc;
+
+        vals = nb.reflectanceRead();
+        vals = [vals.one, vals.two, vals.three, vals.four, vals.five, vals.six];
+
+        calibratedVals = zeros(1,6);
+        for i = 1:6
+            calibratedVals(i) = (vals(i) - minVals(i))/(maxVals(i) - minVals(i));
+            if vals(i) < minVals(i)
+                calibratedVals(i) = 0;
+            end
+            if vals(i) > maxVals(i)
+                calibratedVals(i) = 1;
+            end
+        end
+
+        if all(calibratedVals >= 0.8)
+            nb.setMotor(1, 0);
+            nb.setMotor(2, 0);
+            pause(0.05);
+            break;
+        end
+
+        extScalar = 10;
+        midScalar = 4;
+        innScalar = 2;
+        rightWeight = 1.35;
+
+        error = 6*extScalar*calibratedVals(1) + 1.3*midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
+                rightWeight*innScalar*(1-calibratedVals(4)) - rightWeight*midScalar*calibratedVals(5) - 3*rightWeight*extScalar*calibratedVals(6);
+
+        maxError = 6;
+        if error < -maxError
+            error = -maxError;
+        elseif error > maxError
+            error = maxError;
+        end
+
+        integral = integral + error*dt;
+        derivative = (error - prevError) / dt;
+        control = kp * error + ki * integral + kd * derivative;
+
+        if (vals(1) < whiteThresh && vals(2) < whiteThresh && vals(3) < whiteThresh && ...
+            vals(4) < whiteThresh && vals(5) < whiteThresh && vals(6) < whiteThresh)
+
+            nb.setMotor(1, 0);
+            nb.setMotor(2, 0);
+            break;
+        else
+            m1Duty = mOffScale * max(0, motorBaseSpeed + min(control,0));
+            m2Duty = -max(0, motorBaseSpeed - max(control,0));
+
+            nb.setMotor(1, m1Duty);
+            nb.setMotor(2, m2Duty);
+        end
+
+        prevError = error;
+    end
+
+    nb.setMotor(1, 0);
+    nb.setMotor(2, 0);
 end
