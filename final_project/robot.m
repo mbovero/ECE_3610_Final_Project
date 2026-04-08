@@ -248,7 +248,7 @@ end
 nb.setMotor(1, 0);
 nb.setMotor(2, 0);
 
-%% 5. DISCONNECT
+% 5. DISCONNECT
 clc
 delete(nb);
 clear('nb');
@@ -294,15 +294,22 @@ function performTurn180(nb, turnSpeed, turnTime, mOffScale, minVals, maxVals)
     nb.setMotor(2, 0); 
     pause(0.05); 
 end
+
+
+
 %% Print ultra sonic values
 % Initialize ultrasonic sensors using your required API/pins
     nb.initUltrasonic1('D2','D3');   % front: trig D2, echo D3
     nb.initUltrasonic2('D4','D5');   % side: trig D4, echo D5
 tic
 while(toc < 5)
-    fprintf('Front: %f3f \n', nb.ultrasonicRead1());
-    %fprintf('Side: %f3f \n', nb.ultrasonicRead2());
+    %fprintf('Front: %f3f \n', nb.ultrasonicRead1());
+    fprintf('Side: %f3f \n', nb.ultrasonicRead2());
 end
+
+
+
+
 %% 
 function performWallFollow(nb, mOffScale, minVals, maxVals)
     fprintf('Beginning wall following...\n');
@@ -311,7 +318,7 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
     nb.initReflectance();
 
     kp = 0.9;
-    ki = 0.1;
+    ki = 0.2;
     kd = 0.15;
 
     prevError = 0;
@@ -322,10 +329,10 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
     whiteThresh = 250;
 
     % --- wall-follow parameters
-    frontStopDist = 175;    % tune this
-    wallBaseSpeed = 8;
-    wallKp = 0.35;         % tune this
-    turnSpeed = 8;
+    frontStopDist = 350;    % tune this
+    targetDist = 400;
+    wallBaseSpeed = 11;
+    turnSpeed = 11;
 
     % Initialize ultrasonic sensors using your required API/pins
     nb.initUltrasonic1('D2','D3');   % front: trig D2, echo D3
@@ -396,67 +403,40 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
         prevError = error;
     end
 
-    %% Phase 2: advance toward wall using front ultrasonic
-    fprintf('Advancing to wall...\n');
+    %% Phase 2: line follow until reaching wall distance
+    fprintf('Line following to wall...\n');
+    
+    nb.setMotor(1, mOffScale * 9);
+    nb.setMotor(2, -9);
+    pause(0.2);
 
+    error = 0;
+    prevError = 0;
+    prevTime = 0;
+    integral = 0;
+    
     while true
         front = nb.ultrasonicRead1();
-
+    
         if front <= frontStopDist
             nb.setMotor(1, 0);
             nb.setMotor(2, 0);
             pause(0.05);
             break;
         end
-
-        nb.setMotor(1, mOffScale * motorBaseSpeed);
-        nb.setMotor(2, -motorBaseSpeed);
-    end
-
-    % LINE FOLLOW UNTIL HITTING THE WALL!!
-    %% Phase 3: turn right ~90 degrees
-    fprintf('Turning right 90 degrees...\n');
-
-    tic
-    while toc < 0.55   % tune this
-        nb.setMotor(1, -mOffScale * turnSpeed);
-        nb.setMotor(2, -turnSpeed);
-    end
-    nb.setMotor(1, 0);
-    nb.setMotor(2, 0);
-    pause(0.05);
-
-    %% Phase 4: use side ultrasonic target distance
-    left = nb.ultrasonicRead2();
-    targetDist = left;
-
-    %% Phase 5: follow wall until black line is found again
-    while true
-        left = nb.ultrasonicRead2();
-        wallError = targetDist - left;
-        wallControl = wallKp * wallError;
-
-        % Only slow one side to turn
-        rightCmd = wallBaseSpeed;
-        leftCmd = wallBaseSpeed;
-
-        if wallControl > 0
-            % too close to wall -> turn away
-            rightCmd = max(0, wallBaseSpeed - wallControl);
-        else
-            % too far from wall -> turn toward
-            leftCmd = max(0, wallBaseSpeed + wallControl);
-        end
-
-        nb.setMotor(1, mOffScale * rightCmd);
-        nb.setMotor(2, -leftCmd);
-
+    
+        % TIME STEP
+        dt = toc - prevTime;
+        prevTime = toc;
+    
+        % Reflectance read
         vals = nb.reflectanceRead();
         vals = [vals.one, vals.two, vals.three, vals.four, vals.five, vals.six];
-
+    
+        % Calibrate sensor readings
         calibratedVals = zeros(1,6);
         for i = 1:6
-            calibratedVals(i) = (vals(i) - minVals(i))/(maxVals(i) - minVals(i));
+            calibratedVals(i) = (vals(i) - minVals(i)) / (maxVals(i) - minVals(i));
             if vals(i) < minVals(i)
                 calibratedVals(i) = 0;
             end
@@ -464,16 +444,121 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
                 calibratedVals(i) = 1;
             end
         end
+    
+        % Same line-following error as before
+        extScalar = 10;
+        midScalar = 4;
+        innScalar = 2;
+        rightWeight = 1.35;
+    
+        error = 6*extScalar*calibratedVals(1) + 1.3*midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
+                rightWeight*innScalar*(1-calibratedVals(4)) - rightWeight*midScalar*calibratedVals(5) - 3*rightWeight*extScalar*calibratedVals(6);
+    
+        % Clamp error
+        maxError = 6;
+        if error < -maxError
+            error = -maxError;
+        elseif error > maxError
+            error = maxError;
+        end
+    
+        % PID
+        integral = integral + error * dt;
+        derivative = (error - prevError) / dt;
+        control = kp * error + ki * integral + kd * derivative;
+    
+        % Motor command: line follow while advancing
+        m1Duty = mOffScale * max(0, motorBaseSpeed + min(control,0));
+        m2Duty = -max(0, motorBaseSpeed - max(control,0));
+    
+        nb.setMotor(1, m1Duty);
+        nb.setMotor(2, m2Duty);
+    
+        prevError = error;
+    end
+    %% Phase 3: turn right ~90 degrees
+    fprintf('Turning right 90 degrees...\n');
 
+    tic
+    while toc < 0.6   % tune this
+        nb.setMotor(1, -mOffScale * turnSpeed);
+        nb.setMotor(2, -turnSpeed);
+    end
+    nb.setMotor(1, 0);
+    nb.setMotor(2, 0);
+    pause(0.05);
+
+
+    %% Phase 4: follow wall until black line is found again
+    fprintf('Following wall...\n');
+    
+    prevWallError = 0;
+    wallIntegral = 0;
+    prevWallTime = 0;
+    
+    wallKp = 0.2;
+    wallKi = 0.0;
+    wallKd = 0.5;
+    
+    tic
+    while true
+        dt = toc - prevWallTime;
+        prevWallTime = toc;
+    
+        left = nb.ultrasonicRead2();
+        wallError = targetDist - left;
+        fprintf('wallError: %0.3f\n', wallError);
+        %if (wallError < )
+    
+        wallIntegral = wallIntegral + wallError * dt;
+        wallDerivative = 0;
+        if dt > 0
+            wallDerivative = (wallError - prevWallError) / dt;
+        end
+    
+        wallControl = wallKp * wallError + wallKi * wallIntegral + wallKd * wallDerivative;
+    
+        % Only slow one side to turn
+        rightCmd = wallBaseSpeed;
+        leftCmd = wallBaseSpeed;
+    
+        if wallControl > 0
+            % too close to wall -> turn away
+            rightCmd = max(0, wallBaseSpeed - wallControl);
+        else
+            % too far from wall -> turn toward
+            leftCmd = max(0, wallBaseSpeed + wallControl);
+        end
+    
+        nb.setMotor(1, mOffScale * rightCmd);
+        nb.setMotor(2, -leftCmd);
+    
+        vals = nb.reflectanceRead();
+        vals = [vals.one, vals.two, vals.three, vals.four, vals.five, vals.six];
+    
+        calibratedVals = zeros(1,6);
+        for i = 1:6
+            calibratedVals(i) = (vals(i) - minVals(i)) / (maxVals(i) - minVals(i));
+            if vals(i) < minVals(i)
+                calibratedVals(i) = 0;
+            end
+            if vals(i) > maxVals(i)
+                calibratedVals(i) = 1;
+            end
+        end
+    
         if all(calibratedVals >= 0.8)
             nb.setMotor(1, 0);
             nb.setMotor(2, 0);
             pause(0.05);
             break;
         end
+    
+        prevWallError = wallError;
     end
 
-    %% Phase 6: line follow back HOME
+    %% Phase 5: line follow back HOME
+    fprintf('Line following to start...\n');
     kp = 0.9;
     ki = 0.1;
     kd = 0.15;
