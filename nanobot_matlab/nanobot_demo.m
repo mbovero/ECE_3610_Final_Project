@@ -1,8 +1,8 @@
 clc
 clear all
 
-% Create an instance of the nanobot class
-nb = nanobot('COM9', 115200, 'serial');
+% for PC:
+nb = nanobot('COM12', 115200, 'serial');
 
 %%
 % LIVE PLOT
@@ -202,7 +202,6 @@ red = values.red;
 green = values.green;
 blue = values.blue;
 fprintf('red: %.2f, green: %.2f, blue: %.2f\n', red, green, blue);
-
 
 %%
 % CLOSING OUT
