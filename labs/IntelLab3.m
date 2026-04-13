@@ -32,7 +32,7 @@ trialCount = 8; % Specify how many times you will gesture each digit.
 if (mod(trialCount,4) ~= 0) % check that trialCount is divisible by 4.
     error("trialCount must be divisible by 4");
 end
-digits = 0:4; % Specify which digits you will be gesturing.
+digits = 0:1; % Specify which digits you will be gesturing.
               % Start with 0 through 4, but you can add more after trying 
               % these!
 numreads = 150; % about 2 seconds (on serial); adjust as needed, but we 
@@ -108,7 +108,7 @@ end
 % can reload that data from the corresponding file here.  It will look in 
 % the current directory for the file.
 clear; clc; close all; %initialization
-filename = "2026316_141038_TrainingSet_5Digits8Trials.mat";  % add the directory before the filename 
+filename = "2026413_15457_TrainingSet_2Digits8Trials.mat";  % add the directory before the filename 
                                  % if needed
 data = importdata(filename);
 
@@ -321,7 +321,7 @@ xTestLive = zeros(3,1,1,1); %allocate the size
 
 %%%%%%%%%%%%%%%%%%%%% YOU SHOULD MODIFY THIS %%%%%%%%%%%%%%%%%%%%%%%%%%
 
-xTestLive(1,:,:,1) = std(vals(1,:)); % x std
+xTestLive(1,:,:,1) = mean(vals(2,:)); % y mean
 xTestLive(2,:,:,1) = std(vals(2,:)); % y std
 xTestLive(3,:,:,1) = std(vals(3,:)); % z std
 
