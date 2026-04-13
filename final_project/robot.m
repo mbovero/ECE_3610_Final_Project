@@ -19,6 +19,26 @@ nb = nanobot('COM12', 115200, 'serial');
 % ROBOT = 'R3'
 
 
+%% STOP
+nb.setMotor(1, 0);
+nb.setMotor(2, 0);
+
+% 5. DISCONNECT
+clc
+delete(nb);
+clear('nb');
+clear all
+%% Turn 180
+nb.setMotor(1, 0);
+nb.setMotor(2, 0);
+
+minVals = [93.8,84.2,74.0,71.6,83.00,108.4]; % Set me to min reflectance 
+maxVals = [556.1,476.7,748.9,668.9,273.8,318.1]; % Set me to max reflectance 
+mOffScale = 1.11;
+turn180Speed = 10; 
+turn180Time = 1.5; 
+CCW = 1;
+performTurn180(nb, turn180Speed, turn180Time, minVals, maxVals, CCW);
 
 %% Straight Line Test
 mOffScale = 1.11;
@@ -100,9 +120,11 @@ m1Duty = mOffScale * motorBaseSpeed; % Right motor
 m2Duty = motorBaseSpeed;
 
 % MODE TOGGLE
-mode = 'wall';   % 'line' or 'wall'
+mode = 'wall';   % 'line' or 'wall' or 'color'
 if strcmp(mode, 'wall')
     performWallFollow(nb, mOffScale, minVals, maxVals);
+elseif strcmp(mode, 'color')
+    performColorFind(nb, mOffScale, minVals, maxVals);
 else
 
     %% 5. LINE FOLLOWING PID LOOP
@@ -135,8 +157,8 @@ else
     % The base duty cycle "speed" you wish to travel down the line
     motorBaseSpeed = 10;
 
-    turn180Speed = 9; 
-    turn180Time = 1.2; 
+    turn180Speed = 10; 
+    turn180Time = 1; 
 
     tic % start time
 
@@ -194,7 +216,7 @@ else
          
         if all(calibratedVals >= .8)
             if (~checkpoints)
-                performTurn180(nb, turn180Speed, turn180Time, mOffScale, minVals, maxVals);
+                performTurn180(nb, turn180Speed, turn180Time, minVals, maxVals, 0);
                 prevError = 0;
                 error = 0;
                 integral = 0;
@@ -244,26 +266,24 @@ else
     nb.setMotor(2, 0);
 end
 
-%% STOP
-nb.setMotor(1, 0);
-nb.setMotor(2, 0);
-
-% 5. DISCONNECT
-clc
-delete(nb);
-clear('nb');
-clear all
 
 %% FUNCTIONS
 
-function performTurn180(nb, turnSpeed, turnTime, mOffScale, minVals, maxVals) 
-    fprintf('TURNING');
+function performTurn180(nb, turnSpeed, turnTime, minVals, maxVals, CCW)
+    fprintf('TURNING\n');
+    mOffScale = 1;
+
 
     % Briefly ignore sensor feedback at the start of the turn
     tic
-    while(toc < 0.7)
-        nb.setMotor(1, (mOffScale * turnSpeed)); 
-        nb.setMotor(2, turnSpeed); 
+    while(toc < turnTime)
+        if (CCW == 1)
+            nb.setMotor(1, (mOffScale * turnSpeed)); 
+            nb.setMotor(2, turnSpeed); 
+        else
+            nb.setMotor(1, -(mOffScale * turnSpeed)); 
+            nb.setMotor(2, -turnSpeed); 
+        end 
     end
 
     % Continue turning until the inner sensors find the black line again
@@ -282,10 +302,16 @@ function performTurn180(nb, turnSpeed, turnTime, mOffScale, minVals, maxVals)
             end
         end
 
-        nb.setMotor(1, (mOffScale * turnSpeed)); 
-        nb.setMotor(2, turnSpeed); 
+        if (CCW == 1)
+            nb.setMotor(1, (mOffScale * turnSpeed)); 
+            nb.setMotor(2, turnSpeed); 
+        else
+            nb.setMotor(1, -(mOffScale * turnSpeed)); 
+            nb.setMotor(2, -turnSpeed); 
+        end
 
         if calibratedVals(3) >= 0.3 || calibratedVals(4) >= 0.3
+            fprintf('Line found, turn sequence stopped.\n')
             break;
         end
     end
@@ -295,7 +321,183 @@ function performTurn180(nb, turnSpeed, turnTime, mOffScale, minVals, maxVals)
     pause(0.05); 
 end
 
+%% 
+function performColorFind(nb, mOffScale, minVals, maxVals)
+% --- line-follow parameters
+    nb.initReflectance();
 
+    kp = 0.9;
+    ki = 0.2;
+    kd = 0.15;
+
+    prevError = 0;
+    prevTime = 0;
+    integral = 0;
+
+    motorBaseSpeed = 10;
+    whiteThresh = 250;
+
+%% Phase 1: follow line until red marker is reached
+    fprintf('Following line until marker...\n');
+
+    tic
+    while true
+        dt = toc - prevTime;
+        prevTime = toc;
+
+        vals = nb.reflectanceRead();
+        vals = [vals.one, vals.two, vals.three, vals.four, vals.five, vals.six];
+
+        calibratedVals = zeros(1,6);
+        for i = 1:6
+            calibratedVals(i) = (vals(i) - minVals(i))/(maxVals(i) - minVals(i));
+            if vals(i) < minVals(i)
+                calibratedVals(i) = 0;
+            end
+            if vals(i) > maxVals(i)
+                calibratedVals(i) = 1;
+            end
+        end
+
+        if all(calibratedVals >= 0.8)
+            nb.setMotor(1, 0);
+            nb.setMotor(2, 0);
+            pause(0.05);
+            break;
+        end
+
+        extScalar = 10;
+        midScalar = 4;
+        innScalar = 2;
+        rightWeight = 1.35;
+
+        error = 6*extScalar*calibratedVals(1) + 1.3*midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
+                rightWeight*innScalar*(1-calibratedVals(4)) - rightWeight*midScalar*calibratedVals(5) - 3*rightWeight*extScalar*calibratedVals(6);
+
+        maxError = 6;
+        if error < -maxError
+            error = -maxError;
+        elseif error > maxError
+            error = maxError;
+        end
+
+        integral = integral + error*dt;
+        derivative = (error - prevError) / dt;
+        control = kp * error + ki * integral + kd * derivative;
+
+        if (vals(1) < whiteThresh && vals(2) < whiteThresh && vals(3) < whiteThresh && ...
+            vals(4) < whiteThresh && vals(5) < whiteThresh && vals(6) < whiteThresh)
+
+            nb.setMotor(1, 0);
+            nb.setMotor(2, 0);
+            break;
+        else
+            m1Duty = mOffScale * max(0, motorBaseSpeed + min(control,0));
+            m2Duty = -max(0, motorBaseSpeed - max(control,0));
+
+            nb.setMotor(1, m1Duty);
+            nb.setMotor(2, m2Duty);
+        end
+
+        prevError = error;
+    end
+
+    %% Phase 2: identify color and rotate accordingly
+    %Initialize the RGB color sensor
+    nb.initColor();
+    %Take a single RGB color sensor reading
+    values = nb.colorRead();
+    
+    %The sensor values are saved as fields in a structure:
+    red = values.red;
+    green = values.green;
+    blue = values.blue;
+    fprintf('red: %.2f, green: %.2f, blue: %.2f\n', red, green, blue);
+
+    if (red > 170)
+        CCW = 1;
+        fprintf('RED: CCW\n');
+    elseif (green > 100)
+        CCW = 0;
+        fprintf('BLUE: CW\n');
+
+    end
+
+    nb.setMotor(1, 0);
+    nb.setMotor(2, 0);
+    turn180Speed = 10.5; 
+    turn180Time = 2; 
+    performTurn180(nb, turn180Speed, turn180Time, minVals, maxVals, CCW);
+
+    %% Phase 3: follow line home
+    fprintf('Following line home...\n');
+
+    prevError = 0;
+    prevTime = 0;
+    integral = 0;
+
+    tic
+    while true
+        dt = toc - prevTime;
+        prevTime = toc;
+
+        vals = nb.reflectanceRead();
+        vals = [vals.one, vals.two, vals.three, vals.four, vals.five, vals.six];
+
+        calibratedVals = zeros(1,6);
+        for i = 1:6
+            calibratedVals(i) = (vals(i) - minVals(i))/(maxVals(i) - minVals(i));
+            if vals(i) < minVals(i)
+                calibratedVals(i) = 0;
+            end
+            if vals(i) > maxVals(i)
+                calibratedVals(i) = 1;
+            end
+        end
+
+        if all(calibratedVals >= 0.8)
+            nb.setMotor(1, 0);
+            nb.setMotor(2, 0);
+            pause(0.05);
+            break;
+        end
+
+        extScalar = 10;
+        midScalar = 4;
+        innScalar = 2;
+        rightWeight = 1.35;
+
+        error = 6*extScalar*calibratedVals(1) + 1.3*midScalar*calibratedVals(2) + innScalar*(1-calibratedVals(3)) - ...
+                rightWeight*innScalar*(1-calibratedVals(4)) - rightWeight*midScalar*calibratedVals(5) - 3*rightWeight*extScalar*calibratedVals(6);
+
+        maxError = 6;
+        if error < -maxError
+            error = -maxError;
+        elseif error > maxError
+            error = maxError;
+        end
+
+        integral = integral + error*dt;
+        derivative = (error - prevError) / dt;
+        control = kp * error + ki * integral + kd * derivative;
+
+        if (vals(1) < whiteThresh && vals(2) < whiteThresh && vals(3) < whiteThresh && ...
+            vals(4) < whiteThresh && vals(5) < whiteThresh && vals(6) < whiteThresh)
+
+            nb.setMotor(1, 0);
+            nb.setMotor(2, 0);
+            break;
+        else
+            m1Duty = mOffScale * max(0, motorBaseSpeed + min(control,0));
+            m2Duty = -max(0, motorBaseSpeed - max(control,0));
+
+            nb.setMotor(1, m1Duty);
+            nb.setMotor(2, m2Duty);
+        end
+
+        prevError = error;
+    end
+end
 
 %% Print ultra sonic values
 % Initialize ultrasonic sensors using your required API/pins
@@ -330,7 +532,7 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
 
     % --- wall-follow parameters
     frontStopDist = 350;    % tune this
-    targetDist = 400;
+    targetDist = 300;
     wallBaseSpeed = 11;
     turnSpeed = 11;
 
@@ -480,7 +682,7 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
     fprintf('Turning right 90 degrees...\n');
 
     tic
-    while toc < 0.6   % tune this
+    while toc < 0.65   % tune this
         nb.setMotor(1, -mOffScale * turnSpeed);
         nb.setMotor(2, -turnSpeed);
     end
@@ -498,7 +700,7 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
     
     wallKp = 0.2;
     wallKi = 0.0;
-    wallKd = 0.5;
+    wallKd = 0.2;
     
     tic
     while true
@@ -507,8 +709,15 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
     
         left = nb.ultrasonicRead2();
         wallError = targetDist - left;
+        if (left == 0)
+            wallError = -3500;
+        elseif (wallError < -2000)
+            wallError = -2000;
+        elseif (wallError > 2000)
+            wallError = 2000;
+        end
         fprintf('wallError: %0.3f\n', wallError);
-        %if (wallError < )
+
     
         wallIntegral = wallIntegral + wallError * dt;
         wallDerivative = 0;
@@ -517,7 +726,8 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
         end
     
         wallControl = wallKp * wallError + wallKi * wallIntegral + wallKd * wallDerivative;
-    
+
+
         % Only slow one side to turn
         rightCmd = wallBaseSpeed;
         leftCmd = wallBaseSpeed;
@@ -547,7 +757,7 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
             end
         end
     
-        if all(calibratedVals >= 0.8)
+        if (calibratedVals(3) >= 0.7 || calibratedVals(4) >= 0.7)
             nb.setMotor(1, 0);
             nb.setMotor(2, 0);
             pause(0.05);
@@ -559,6 +769,13 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
 
     %% Phase 5: line follow back HOME
     fprintf('Line following to start...\n');
+
+    turn90Speed = 9; 
+    turn90Time = 0.5; 
+    performTurn180(nb, turn90Speed, turn90Time, minVals, maxVals, 1);
+
+
+
     kp = 0.9;
     ki = 0.1;
     kd = 0.15;
