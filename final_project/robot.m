@@ -24,89 +24,8 @@ nb.setMotor(1, 0);
 nb.setMotor(2, 0);
 
 % 5. DISCONNECT
-clc
 delete(nb);
 clear('nb');
-clear all
-%% Turn 180
-nb.setMotor(1, 0);
-nb.setMotor(2, 0);
-
-minVals = [93.8,84.2,74.0,71.6,83.00,108.4]; % Set me to min reflectance 
-maxVals = [556.1,476.7,748.9,668.9,273.8,318.1]; % Set me to max reflectance 
-mOffScale = 1.11;
-turn180Speed = 10; 
-turn180Time = 1.5; 
-CCW = 1;
-performTurn180(nb, turn180Speed, turn180Time, minVals, maxVals, CCW);
-
-%% Straight Line Test
-mOffScale = 1.11;
-motorBaseSpeed = 9;
-m1Duty = mOffScale * motorBaseSpeed; % Right motor
-m2Duty = motorBaseSpeed;
-
-tic
-nb.setMotor(1, mOffScale * 10);
-nb.setMotor(2, 10);
-pause(0.03);
-
-while (toc < 3)
-    nb.setMotor(1, m1Duty);
-    nb.setMotor(2, -m2Duty);
-end
-
-% Turn off the motors
-nb.setMotor(1, 0);
-nb.setMotor(2, 0);
-
-%% Put the sensor array over a white background and find the expected min
-% reflectance array values.
-
-% Initialize the reflectance array.
-nb.initReflectance();
-
-% Average a few values 
-avgVals = zeros(10, 6);
-for i = 1:10
-    read = nb.reflectanceRead();
-    avgVals(i, 1) = read.one;
-    avgVals(i, 2) = read.two;
-    avgVals(i, 3) = read.three;
-    avgVals(i, 4) = read.four;
-    avgVals(i, 5) = read.five;
-    avgVals(i, 6) = read.six;
-end
-minVals = [mean(avgVals(:,1)), mean(avgVals(:,2)), mean(avgVals(:,3)), ...
-    mean(avgVals(:,4)), mean(avgVals(:,5)), mean(avgVals(:,6))];
-
-fprintf(['Min Reflectance - one: %.2f, two: %.2f, three: %.2f four:' ...
-    '%.2f five: %.2f six: %.2f\n'], ...
-    minVals(1), minVals(2), minVals(3), minVals(4), minVals(5), minVals(6));
-
-%% MAX REFLECTANCE VALUE CALIBRATION (all sensors over black tape)
-% Put the sensor array over a black background and find the expected max
-% reflectance array values.
-
-% Initialize the reflectance array.
-nb.initReflectance();
-
-% Average a few values
-avgVals = zeros(10, 6);
-for i = 1:10
-    read = nb.reflectanceRead();
-    avgVals(i, 1) = read.one;
-    avgVals(i, 2) = read.two;
-    avgVals(i, 3) = read.three;
-    avgVals(i, 4) = read.four;
-    avgVals(i, 5) = read.five;
-    avgVals(i, 6) = read.six;
-end
-maxVals = [mean(avgVals(:,1)), mean(avgVals(:,2)), mean(avgVals(:,3)), ...
-    mean(avgVals(:,4)), mean(avgVals(:,5)), mean(avgVals(:,6))];
-fprintf(['Max Reflectance - one: %.2f, two: %.2f, three: %.2f '...
-    'four: %.2f five: %.2f six: %.2f\n'], ...
-    maxVals(1), maxVals(2), maxVals(3), maxVals(4), maxVals(5), maxVals(6));
 
 %% MAIN BEHAVIOR ------------------------------------------------------------
 % Initialization
@@ -127,7 +46,7 @@ elseif strcmp(mode, 'color')
     performColorFind(nb, mOffScale, minVals, maxVals);
 else
 
-    %% 5. LINE FOLLOWING PID LOOP
+    %% LINE FOLLOWING PID LOOP
 
     % First initialize the reflectance array.
     nb.initReflectance();
@@ -265,6 +184,8 @@ else
     nb.setMotor(1, 0);
     nb.setMotor(2, 0);
 end
+
+
 
 
 %% FUNCTIONS
@@ -499,6 +420,9 @@ function performColorFind(nb, mOffScale, minVals, maxVals)
     end
 end
 
+
+
+
 %% Print ultra sonic values
 % Initialize ultrasonic sensors using your required API/pins
     nb.initUltrasonic1('D2','D3');   % front: trig D2, echo D3
@@ -512,7 +436,7 @@ end
 
 
 
-%% 
+%% -------------------------------------------------------------------------------------
 function performWallFollow(nb, mOffScale, minVals, maxVals)
     fprintf('Beginning wall following...\n');
 
@@ -520,7 +444,7 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
     nb.initReflectance();
 
     kp = 0.9;
-    ki = 0.2;
+    ki = 0.0;
     kd = 0.15;
 
     prevError = 0;
@@ -532,8 +456,9 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
 
     % --- wall-follow parameters
     frontStopDist = 350;    % tune this
-    targetDist = 300;
-    wallBaseSpeed = 11;
+    wallMinDist = 50;
+    wallMaxDist = 700;
+    wallBaseSpeed = 9;
     turnSpeed = 11;
 
     % Initialize ultrasonic sensors using your required API/pins
@@ -678,74 +603,34 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
     
         prevError = error;
     end
+
     %% Phase 3: turn right ~90 degrees
     fprintf('Turning right 90 degrees...\n');
 
-    tic
-    while toc < 0.65   % tune this
+
+    while true
+        left = nb.ultrasonicRead2();
         nb.setMotor(1, -mOffScale * turnSpeed);
         nb.setMotor(2, -turnSpeed);
+        if (left <= 200)
+            nb.setMotor(1, 0);
+            nb.setMotor(2, 0);
+            pause(0.05);
+            break;
+        end
     end
-    nb.setMotor(1, 0);
-    nb.setMotor(2, 0);
-    pause(0.05);
 
 
-    %% Phase 4: follow wall until black line is found again
+    %% Phase 4: go straight, only correct when side distance leaves range
     fprintf('Following wall...\n');
-    
-    prevWallError = 0;
-    wallIntegral = 0;
-    prevWallTime = 0;
-    
-    wallKp = 0.2;
-    wallKi = 0.0;
-    wallKd = 0.2;
-    
-    tic
+
     while true
-        dt = toc - prevWallTime;
-        prevWallTime = toc;
-    
         left = nb.ultrasonicRead2();
-        wallError = targetDist - left;
-        if (left == 0)
-            wallError = -3500;
-        elseif (wallError < -2000)
-            wallError = -2000;
-        elseif (wallError > 2000)
-            wallError = 2000;
-        end
-        fprintf('wallError: %0.3f\n', wallError);
+        fprintf('Side distance: %0.3f\n', left);
 
-    
-        wallIntegral = wallIntegral + wallError * dt;
-        wallDerivative = 0;
-        if dt > 0
-            wallDerivative = (wallError - prevWallError) / dt;
-        end
-    
-        wallControl = wallKp * wallError + wallKi * wallIntegral + wallKd * wallDerivative;
-
-
-        % Only slow one side to turn
-        rightCmd = wallBaseSpeed;
-        leftCmd = wallBaseSpeed;
-    
-        if wallControl > 0
-            % too close to wall -> turn away
-            rightCmd = max(0, wallBaseSpeed - wallControl);
-        else
-            % too far from wall -> turn toward
-            leftCmd = max(0, wallBaseSpeed + wallControl);
-        end
-    
-        nb.setMotor(1, mOffScale * rightCmd);
-        nb.setMotor(2, -leftCmd);
-    
         vals = nb.reflectanceRead();
         vals = [vals.one, vals.two, vals.three, vals.four, vals.five, vals.six];
-    
+
         calibratedVals = zeros(1,6);
         for i = 1:6
             calibratedVals(i) = (vals(i) - minVals(i)) / (maxVals(i) - minVals(i));
@@ -756,15 +641,26 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
                 calibratedVals(i) = 1;
             end
         end
-    
+
         if (calibratedVals(3) >= 0.7 || calibratedVals(4) >= 0.7)
             nb.setMotor(1, 0);
             nb.setMotor(2, 0);
             pause(0.05);
             break;
         end
-    
-        prevWallError = wallError;
+
+        if ((left >= wallMinDist && left <= wallMaxDist))
+            % In range: go straight
+            rightCmd = wallBaseSpeed;
+            leftCmd = wallBaseSpeed;
+        else
+            % Out of range: only right wheel moves until back in range
+            rightCmd = 10;
+            leftCmd = 1;
+        end
+
+        nb.setMotor(1, mOffScale * rightCmd);
+        nb.setMotor(2, -leftCmd);
     end
 
     %% Phase 5: line follow back HOME
@@ -772,13 +668,14 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
 
     turn90Speed = 9; 
     turn90Time = 0.5; 
-    performTurn180(nb, turn90Speed, turn90Time, minVals, maxVals, 1);
-
-
+    CCW = 0;
+    performTurn180(nb, turn90Speed, turn90Time, minVals, maxVals, CCW);
 
     kp = 0.9;
     ki = 0.1;
     kd = 0.15;
+
+    stopDelay = 5; % how long to ignore full black line
 
     prevError = 0;
     prevTime = 0;
@@ -829,8 +726,10 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
         derivative = (error - prevError) / dt;
         control = kp * error + ki * integral + kd * derivative;
 
-        if (vals(1) < whiteThresh && vals(2) < whiteThresh && vals(3) < whiteThresh && ...
-            vals(4) < whiteThresh && vals(5) < whiteThresh && vals(6) < whiteThresh)
+        fprintf("toc:%d", toc);
+
+        if (toc > stopDelay && (vals(1) < whiteThresh && vals(2) < whiteThresh && vals(3) < whiteThresh && ...
+            vals(4) < whiteThresh && vals(5) < whiteThresh && vals(6) < whiteThresh))
 
             nb.setMotor(1, 0);
             nb.setMotor(2, 0);
