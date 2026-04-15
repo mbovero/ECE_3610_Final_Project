@@ -455,9 +455,9 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
     whiteThresh = 250;
 
     % --- wall-follow parameters
-    frontStopDist = 350;    % tune this
+    frontStopDist = 400;    % tune this
     wallMinDist = 50;
-    wallMaxDist = 700;
+    wallMaxDist = 500;
     wallBaseSpeed = 9;
     turnSpeed = 11;
 
@@ -612,7 +612,7 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
         left = nb.ultrasonicRead2();
         nb.setMotor(1, -mOffScale * turnSpeed);
         nb.setMotor(2, -turnSpeed);
-        if (left <= 200)
+        if (left <= 500)
             nb.setMotor(1, 0);
             nb.setMotor(2, 0);
             pause(0.05);
@@ -655,8 +655,8 @@ function performWallFollow(nb, mOffScale, minVals, maxVals)
             leftCmd = wallBaseSpeed;
         else
             % Out of range: only right wheel moves until back in range
-            rightCmd = 10;
-            leftCmd = 1;
+            rightCmd = 9;
+            leftCmd = -9;
         end
 
         nb.setMotor(1, mOffScale * rightCmd);
