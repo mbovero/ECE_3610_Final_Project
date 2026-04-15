@@ -26,7 +26,6 @@ nb.setMotor(2, 0);
 % 5. DISCONNECT
 delete(nb);
 clear('nb');
-
 %% MAIN BEHAVIOR ------------------------------------------------------------
 % Initialization
 minVals = [93.8,84.2,74.0,71.6,83.00,108.4]; % Set me to min reflectance 

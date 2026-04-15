@@ -8,17 +8,10 @@ nb = nanobot('COM10', 115200, 'serial');
 nb.ledWrite(0); % make sure the LED is off
 
 
-
-
-
-
 clear; clc; close all; %initialization
 filename = "2026413_15457_TrainingSet_2Digits8Trials.mat";  % add the directory before the filename 
                                  % if needed
 data = importdata(filename);
-
-
-
 
 
 %Calculate features for each "image"
@@ -44,9 +37,6 @@ for a = 1:digitCount %iterate through all digits
 end
 
 
-
-
-
 % Store Data as at Stack for Input to Neural Network
 % Features are stored as a stack in a 4D array (b/c the MATLAB function 
 % requries a 4D array as input; we are only using the 1st and 4 dimensions)
@@ -64,10 +54,6 @@ for a = 1:digitCount %iterate through digits
     end
 end
 labels = categorical(labels); %convert labels into categorical
-
-
-
-
 
 
 % Split Training and Testing Data
@@ -90,9 +76,6 @@ yTrain = labels(logical(selection)); %get subset (3/4) of labels to train on
 %testing data
 xTest = TrainingFeatures(:,:,:,~logical(selection)); % get subset (1/4) of features to test on
 yTest = labels(~logical(selection)); %get subset (1/4) of labels to test on
-
-
-
 
 
 % Define Neural Network
@@ -118,10 +101,6 @@ layers= [ ... %NN architecture for a simple perceptron
 options = trainingOptions('sgdm','InitialLearnRate', learnRate, ...
     'MaxEpochs', maxEpoch, 'Shuffle','every-epoch','Plots', ...
     'training-progress', 'ValidationData',{xTest,yTest}); %options for NN
-
-
-
-
 
 
 % Train Neural Network
@@ -199,13 +178,7 @@ xTestLive(3,:,:,1) = std(vals(3,:)); % z std
 
 % Prediction based on NN
 prediction = classify(myNeuralNetwork,xTestLive);
-fprintf(prediction);
-
-
-% Plot with label
-% figure(); plot(singleLetter', 'LineWidth', 1.5); %plot accelerometer traces
-% legend('X','Y','Z'); ylabel('Acceleration'); xlabel('Time') %label axes
-% title("Classification:", string(prediction)); %title plot with the label
+fprintf('%s\n', string(prediction));
 
 
 
