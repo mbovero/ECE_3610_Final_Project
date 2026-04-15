@@ -115,8 +115,7 @@ options = trainingOptions('sgdm','InitialLearnRate', learnRate, ...
 
 
 
-%%
-% Run-Time Predictions 
+%% Run-Time Predictions 
 % (This is essentially a copy of the lab 1 code with determination 
 % replaced with NN code.)
 % Perform a gesture and see if the perceptron classification works! 
